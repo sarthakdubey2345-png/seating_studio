@@ -1,9 +1,11 @@
+
 <!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#faf9f5;color:#141413}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style></head><body>
 <title>Mesa Seating Studio</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=DM+Serif+Display&family=Figtree:wght@400;500;600;700&family=Great+Vibes&family=Parisienne&family=Cormorant+Garamond:wght@400;500;600&family=Playfair+Display:wght@400;600&family=Montserrat:wght@400;500;600&display=swap">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <style>
 :root{
   --bg:#F7F6F9;--side:#F0EEF3;--surface:#FFFFFF;--surface2:#F8F7FA;--ink:#1E1B24;--muted:#6C6776;--faint:#9A95A3;
@@ -274,6 +276,27 @@ td.notes{max-width:260px;color:var(--muted);font-size:12.5px}
 .pills button:hover{color:var(--ink)}
 .pills button[aria-pressed="true"]{background:var(--ink);border-color:var(--ink);color:var(--bg)}
 
+/* invites & replies */
+.steps3{display:grid;gap:14px;max-width:1080px}
+.step{display:grid;grid-template-columns:34px minmax(0,1fr);gap:16px;padding:22px 22px 24px}
+.num{width:30px;height:30px;border-radius:50%;background:var(--accent-soft);color:var(--accent);display:grid;place-items:center;font-weight:700;font-size:14px}
+.stepb{min-width:0}
+.stepb>.card-h{margin-bottom:8px}
+.rgrid{display:grid;grid-template-columns:minmax(0,1.6fr) minmax(0,1fr) minmax(0,.9fr) minmax(0,.9fr);gap:12px;margin-top:14px}
+@media (max-width:1000px){.rgrid{grid-template-columns:1fr 1fr}}
+@media (max-width:560px){.rgrid{grid-template-columns:1fr}.step{grid-template-columns:1fr}}
+.mealpick{display:flex;flex-wrap:wrap;gap:6px;margin:8px 0 6px}
+.mp{border:1px solid var(--line);border-radius:999px;padding:5px 12px 5px 9px;font-size:13px;gap:7px}
+.mp:has(input:checked){border-color:var(--accent-line);background:var(--accent-soft)}
+.linkbox{display:flex;align-items:center;gap:10px;flex-wrap:wrap;background:var(--surface2);border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin:16px 0 12px}
+.linkbox code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12.5px;word-break:break-all;flex:1;min-width:0}
+.mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;letter-spacing:.06em;font-weight:600}
+details.tpl{margin-bottom:12px}
+details.tpl summary{cursor:pointer;color:var(--accent);font-weight:600;font-size:13px;margin-bottom:8px}
+.msgs{list-style:none;margin:8px 0 0;padding:0;display:grid;gap:10px}
+.msgs li{background:var(--surface2);border-radius:10px;padding:10px 12px;font-size:13.5px}
+.msgs p{margin:2px 0 0;color:var(--muted)}
+
 /* modal + toast */
 #modal[hidden]{display:none}
 #modal{position:fixed;inset:0;background:rgba(18,12,24,.45);display:flex;align-items:center;justify-content:center;z-index:500;padding:16px;-webkit-backdrop-filter:blur(3px);backdrop-filter:blur(3px)}
@@ -426,7 +449,7 @@ let S,hist=[],saveT;
 const ui={view:'dashboard',colorBy:'group',labels:'names',sel:null,selGuest:null,q:'',rsvpF:'',groupF:'',fq:'',vb:null,report:'meals',importRows:null};
 function load(){
   try{const r=localStorage.getItem(KEY);if(r){const d=JSON.parse(r);if(d&&d.v===1)return d}}catch(e){}
-  const d=makeSample();autoAssignOn(d,{includePending:false,keepPinned:false});return d;
+  const d=freshSample();autoAssignOn(d,{includePending:false,keepPinned:false});return d;
 }
 function persist(){clearTimeout(saveT);saveT=setTimeout(()=>{try{localStorage.setItem(KEY,JSON.stringify(S))}catch(e){}},250)}
 function snap(){hist.push(JSON.stringify(S));if(hist.length>50)hist.shift();$('#undoBtn').disabled=false}
@@ -435,6 +458,7 @@ const gById=id=>S.guests.find(g=>g.id===id);
 const tById=id=>S.tables.find(t=>t.id===id);
 const seatTables=d=>d.tables.filter(t=>t.shape!=='zone'&&t.seats>0);
 function normalize(d){
+  if(!d.rsvp)d.rsvp=defaultRsvp(d);
   const tm=Object.fromEntries(d.tables.map(t=>[t.id,t]));const used=new Set();
   for(const g of d.guests){
     if(g.rsvp==='No'&&g.table){g.table=null;g.seat=null;g.pinned=false}
@@ -677,6 +701,7 @@ const ICONS={
   sliders:'<path d="M4 7h9M17 7h3M4 17h3M11 17h9"/><circle cx="15" cy="7" r="2"/><circle cx="9" cy="17" r="2"/>',
   search:'<circle cx="11" cy="11" r="6.5"/><path d="m20 20-4.2-4.2"/>',
   x:'<path d="M6 6l12 12M18 6 6 18"/>',
+  send:'<path d="M21 3 10.5 13.5"/><path d="M21 3 14.5 21l-4-7.5L3 9.5z"/>',
 };
 const ic=(n,s=18)=>`<svg class="ic" viewBox="0 0 24 24" width="${s}" height="${s}" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[n]||''}</svg>`;
 function pageHead(title,sub,act=''){return`<header class="ph"><div><h1>${title}</h1>${sub?`<p id="phsub">${sub}</p>`:''}</div><div class="act">${act}</div></header>`}
@@ -693,7 +718,7 @@ function popMenu(anchor,html,bind){
 function exportMenu(anchor,items){popMenu(anchor,items.map((it,i)=>`<button data-i="${i}"><b>${it[0]}</b><span>${it[1]}</span></button>`).join(''),m=>$$('[data-i]',m).forEach(b=>b.onclick=()=>{closeMenu();items[+b.dataset.i][2]()}))}
 function fmtShort(iso){if(!iso)return'';const d=new Date(iso+'T12:00:00');if(isNaN(d))return iso;return d.toLocaleDateString('en-GB',{weekday:'short',day:'numeric',month:'short',year:'numeric'})}
 
-const NAV=[['Plan',[['dashboard','Overview','home'],['guests','Guests','users'],['prefs','Seating rules','link'],['floor','Floor plan','floor']]],['Print & share',[['charts','Seating chart','list'],['stationery','Stationery','mail'],['reports','Reports','bars']]]];
+const NAV=[['Plan',[['dashboard','Overview','home'],['guests','Guests','users'],['collect','Invites & replies','send'],['prefs','Seating rules','link'],['floor','Floor plan','floor']]],['Print & share',[['charts','Seating chart','list'],['stationery','Stationery','mail'],['reports','Reports','bars']]]];
 function renderHeader(){
   const e=S.event,un=S.guests.filter(g=>g.rsvp==='Yes'&&!g.table).length;
   $('#evcard').innerHTML=`<b>${esc(e.name)}${ic('sliders',16)}</b><span>${esc(fmtShort(e.date))}</span><span>${esc(e.venue)}</span>`;
@@ -713,7 +738,7 @@ function openSettings(){
     <div class="mfoot"><button class="btn" id="evCancel">Cancel</button><button class="btn pri" id="evSave">Save</button></div>`,m=>{
     $('#evCancel',m).onclick=closeModal;
     $('#evSave',m).onclick=()=>{snap();S.event.name=$('#evName',m).value.trim()||S.event.name;S.event.date=$('#evDate',m).value;S.event.venue=$('#evVenue',m).value.trim();persist();closeModal();render();toast('Event details saved')};
-    $('#resetS',m).onclick=e=>armConfirm(e.currentTarget,()=>{snap();S=makeSample();autoAssignOn(S,{includePending:false,keepPinned:false});ui.vb=null;persist();closeModal();render();toast('Sample data restored')});
+    $('#resetS',m).onclick=e=>armConfirm(e.currentTarget,()=>{snap();S=freshSample();autoAssignOn(S,{includePending:false,keepPinned:false});ui.vb=null;persist();closeModal();render();toast('Sample data restored')});
     $('#clearG',m).onclick=e=>armConfirm(e.currentTarget,()=>{snap();S.guests=[];S.prefs=[];persist();closeModal();render();toast('All guests cleared. Tables kept.')});
   });
 }
@@ -761,7 +786,6 @@ function viewDashboard(el){
 }
 
 /* ================= GUESTS ================= */
-const GCOLS=[['first','First name'],['last','Last name'],['party','Household'],['group','Group'],['side','Side'],['gender','Gender'],['age','Age'],['rsvp','RSVP'],['meal','Meal'],['vip','VIP'],['notes','Notes'],['address','Address']];
 function viewGuests(el){
   const G=S.guests,cnt=v=>G.filter(g=>g.rsvp===v).length,groups=groupList(S);
   el.innerHTML=pageHead('Guests',`${G.length} invited · ${cnt('Yes')} attending · ${cnt('Pending')} awaiting reply`,
@@ -836,12 +860,13 @@ function openGuest(id){
   });
 }
 
-/* ---------- import ---------- */
-const SYN={first:['first','first name','firstname','given name','nombre','name 1'],last:['last','last name','lastname','surname','apellido','apellidos','family name'],full:['name','full name','guest','guest name','invitado','nombre completo'],
-  party:['household','party','family id','hogar','familia','invitation','party id','household id'],group:['group','grupo','category','relation','relationship','categoria','categoría'],side:['side','lado'],gender:['gender','sex','sexo','genero','género'],
-  age:['age','adult/child','edad','type'],rsvp:['rsvp','status','attending','estado','confirmado','asistencia','reply'],meal:['meal','menu','menú','food','comida','entree','entrée','main course'],vip:['vip'],
-  notes:['notes','note','notas','dietary','diet','comments','comentarios'],address:['address','dirección','direccion','mailing address','postal address'],table:['table','mesa']};
-const LABEL={first:'First name',last:'Last name',full:'Full name',party:'Household',group:'Group',side:'Side',gender:'Gender',age:'Age',rsvp:'RSVP',meal:'Meal',vip:'VIP',notes:'Notes',address:'Address',table:'Table'};
+/* ---------- import: any format, merged into the current list ---------- */
+const SYN={first:['first','first name','firstname','given name','nombre','name 1','nombre(s)'],last:['last','last name','lastname','surname','apellido','apellidos','family name'],full:['name','full name','guest','guest name','invitado','nombre completo','your name','tu nombre','guest full name'],
+  party:['household','party','family id','hogar','familia','invitation','party id','household id','household code'],group:['group','grupo','category','relation','relationship','categoria','categoría','tags'],side:['side','lado'],gender:['gender','sex','sexo','genero','género'],
+  age:['age','adult/child','edad','type','age group'],rsvp:['rsvp','status','attending','estado','confirmado','asistencia','reply','rsvp status'],meal:['meal','menu','menú','food','comida','entree','entrée','main course','meal choice'],vip:['vip'],
+  notes:['notes','note','notas','dietary','diet','comments','comentarios','dietary restrictions','allergies'],address:['address','dirección','direccion','mailing address','postal address'],table:['table','mesa'],
+  gid:['guest id','guest_id','guestid','id invitado'],message:['message','mensaje','message for the hosts']};
+const LABEL={first:'First name',last:'Last name',full:'Full name',party:'Household',group:'Group',side:'Side',gender:'Gender',age:'Age',rsvp:'RSVP',meal:'Meal',vip:'VIP',notes:'Notes',address:'Address',table:'Table',gid:'Guest ID',message:'Message'};
 function parseText(txt){
   txt=txt.replace(/^﻿/,'');const first=txt.split(/\r?\n/)[0]||'';
   const delim=first.includes('\t')?'\t':(first.split(';').length>first.split(',').length?';':',');
@@ -852,46 +877,278 @@ function parseText(txt){
   if(cell||row.length){row.push(cell);rows.push(row)}
   return rows.filter(r=>r.some(c=>String(c).trim()));
 }
-function mapHeader(h){const n=String(h).trim().toLowerCase().replace(/[_*]/g,' ').replace(/\s+/g,' ');for(const k in SYN)if(SYN[k].includes(n))return k;return null}
+const normTxt=s=>String(s||'').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/[_*?¿:]/g,' ').replace(/\s+/g,' ').trim();
+function mapHeader(h){
+  const raw=String(h).trim().toLowerCase().replace(/[_*]/g,' ').replace(/\s+/g,' '),n=normTxt(h);
+  for(const k in SYN)if(SYN[k].includes(raw)||SYN[k].map(normTxt).includes(n))return k;
+  if(/timestamp|marca temporal|submitted|email|e-mail|correo|phone|telefono|whatsapp/.test(n))return null;
+  if(/attend|rsvp|asist|coming|confirm|will you/.test(n))return'rsvp';
+  if(/meal|menu|entree|food|comida|platillo/.test(n))return'meal';
+  if(/diet|allerg|alergi|restric/.test(n))return'notes';
+  if(/household|familia|party/.test(n))return'party';
+  if(/^(full )?name|nombre completo|your name|tu nombre/.test(n))return'full';
+  if(/first|nombre/.test(n))return'first';
+  if(/last|surname|apellido/.test(n))return'last';
+  if(/group|grupo|relation/.test(n))return'group';
+  if(/address|direccion/.test(n))return'address';
+  if(/message|mensaje/.test(n))return'message';
+  return null;
+}
+function newGuest(o){return Object.assign({id:uid('g'),first:'',last:'',party:'',group:'',side:'',gender:'',age:'Adult',rsvp:'Pending',meal:'',vip:false,notes:'',address:'',table:null,seat:null,pinned:false},o)}
+const NORM={rsvp:v=>{const s=normTxt(v);if(/^(n|no)\b|declin|regret|can ?t|cannot|not attend|unable|no asist|lamentablemente/.test(s))return'No';if(/^(y|yes|si)\b|attend|accept|confirm|will be there|asist|con gusto|joyful/.test(s))return'Yes';return'Pending'},
+  gender:v=>{v=normTxt(v);return/^(m|male|man|h|hombre|masculino)$/.test(v)?'M':/^(f|female|woman|mujer|femenino)$/.test(v)?'F':''},
+  age:v=>/child|kid|nin|menor|infant/i.test(normTxt(v))?'Child':'Adult',vip:v=>/^(y|yes|si|sí|true|1|x|vip)$/i.test(v.trim()),
+  meal:v=>{const s=normTxt(v);const hit=MEALS.find(m=>normTxt(m)===s)||(/veg(an|ano)\b/.test(s)?'Vegan':/vegetari|veg\b|veggie/.test(s)?'Vegetarian':/jain/.test(s)?'Jain':/child|kid|infantil|nin/.test(s)?'Child menu':/beef|res\b|steak|filet/.test(s)?'Beef':/chicken|pollo/.test(s)?'Chicken':/fish|pescado|salmon/.test(s)?'Fish':null);return hit||v},
+  side:v=>/bride|novia/i.test(v)?'Bride':/groom|novio/i.test(v)?'Groom':/both|ambos/i.test(v)?'Both':v};
 function rowsToGuests(rows){
   const head=rows[0].map(mapHeader);const out=[];const tByName=Object.fromEntries(S.tables.map(t=>[t.name.toLowerCase(),t.id]));
-  const norm={rsvp:v=>{v=v.toLowerCase();return/^(y|yes|si|sí|attending|confirmed|accepted|confirmado|asiste)/.test(v)?'Yes':/^(n|no|declined|not attending|rechazado)/.test(v)?'No':'Pending'},
-    gender:v=>{v=v.toLowerCase();return/^(m|male|man|h|hombre|masculino)$/.test(v)?'M':/^(f|female|woman|mujer|femenino)$/.test(v)?'F':''},
-    age:v=>/child|kid|niñ|nin|menor/i.test(v)?'Child':'Adult',vip:v=>/^(y|yes|si|sí|true|1|x|vip)$/i.test(v.trim()),
-    meal:v=>MEALS.find(m=>m.toLowerCase()===v.toLowerCase())||v,side:v=>/bride|novia/i.test(v)?'Bride':/groom|novio/i.test(v)?'Groom':/both|ambos/i.test(v)?'Both':v};
-  for(const r of rows.slice(1)){const g={id:uid('g'),first:'',last:'',party:'',group:'',side:'',gender:'',age:'Adult',rsvp:'Pending',meal:'',vip:false,notes:'',address:'',table:null,seat:null,pinned:false};let tbl='';
+  for(const r of rows.slice(1)){const g=newGuest({});g._set=new Set();let tbl='';
     head.forEach((k,i)=>{let v=String(r[i]??'').trim();if(!k||!v)return;
-      if(k==='full'){const p=v.split(/\s+/);g.first=p[0];g.last=p.slice(1).join(' ')}else if(k==='table')tbl=v;else g[k]=norm[k]?norm[k](v):v});
-    if(!g.first&&!g.last)continue;
-    if(tbl&&tByName[tbl.toLowerCase()]){g.table=tByName[tbl.toLowerCase()];g.seat=null}
+      if(k==='full'){if(g._set.has('first'))return;const p=v.split(/\s+/);g.first=p[0];g.last=p.slice(1).join(' ');g._set.add('first');g._set.add('last')}
+      else if(k==='table')tbl=v;else if(k==='gid')g._gid=v;else if(k==='message')g._message=v;
+      else if(k==='notes'&&g._set.has('notes'))g.notes+=' · '+v;
+      else if(!g._set.has(k)){g[k]=NORM[k]?NORM[k](v):v;g._set.add(k)}});
+    if(!g.first&&!g.last&&!g._gid)continue;
+    if(tbl&&tByName[tbl.toLowerCase()]){g._table=tByName[tbl.toLowerCase()]}
     out.push(g)}
   return{guests:out,head:rows[0].map((h,i)=>({h,k:head[i]}))};
 }
-function openImport(){
-  ui.importRows=null;
-  openModal(`<h2>Import a guest list</h2>
-    <p class="hint">Upload an Excel or CSV file, or copy the rows in Excel and paste them below. The first row should hold column names such as <b>First name, Last name, Household, Group, RSVP, Meal, Notes</b>. Spanish headings (Nombre, Apellido, Mesa…) work too.</p>
-    <div class="drop"><input type="file" id="imFile" accept=".xlsx,.xls,.csv,.tsv,.txt"><span class="hint">or paste below</span>
-      <textarea id="imPaste" rows="5" placeholder="First name&#9;Last name&#9;Household&#9;RSVP&#10;Ana&#9;Morales&#9;H001&#9;Yes"></textarea></div>
-    <div id="imPrev"></div>
-    <div class="row"><label class="chk"><input type="radio" name="imMode" value="add" checked> Add to the current list</label><label class="chk"><input type="radio" name="imMode" value="replace"> Replace the current list</label></div>
-    <div class="mfoot"><button class="btn ghost" id="imTpl">Download template</button><span class="grow"></span><button class="btn" id="imCancel">Cancel</button><button class="btn pri" id="imGo" disabled>Import guests</button></div>`,m=>{
-    const show=rows=>{if(!rows||rows.length<2){$('#imPrev',m).innerHTML='<p class="hint">No rows found yet.</p>';$('#imGo',m).disabled=true;return}
-      const r=rowsToGuests(rows);ui.importRows=r.guests;
-      $('#imPrev',m).innerHTML=`<p class="meta" style="margin-bottom:6px">${r.guests.length} guests found. Columns matched:</p><div class="mapchips">${r.head.map(x=>`<span class="${x.k?'':'no'}">${esc(x.h)}${x.k?' → '+LABEL[x.k]:''}</span>`).join('')}</div>
-        <div class="tbl-wrap" style="margin-top:10px;max-height:180px"><table class="data"><thead><tr><th>Name</th><th>Household</th><th>Group</th><th>RSVP</th><th>Meal</th></tr></thead><tbody>${r.guests.slice(0,6).map(g=>`<tr><td>${esc(fullName(g))}</td><td>${esc(g.party)}</td><td>${esc(g.group)}</td><td>${g.rsvp}</td><td>${esc(g.meal)}</td></tr>`).join('')}</tbody></table></div>`;
-      $('#imGo',m).disabled=!r.guests.length};
-    $('#imPaste',m).oninput=e=>show(parseText(e.target.value));
-    $('#imFile',m).onchange=async e=>{const f=e.target.files[0];if(!f)return;
-      if(/\.xlsx?$/i.test(f.name)){if(typeof XLSX==='undefined'){toast('The Excel reader didn’t load. Save the sheet as CSV and try again.');return}
-        const wb=XLSX.read(await f.arrayBuffer(),{type:'array'});show(XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]],{header:1,raw:false,defval:''}))}
-      else show(parseText(await f.text()))};
+/* WhatsApp or typed list: one household per line; "Heading:" lines set the group */
+function parsePlain(txt,group){
+  const out=[];let grp=group||'';const stamp=Date.now().toString(36).slice(-4);let pn=0;
+  for(let line of txt.split(/\r?\n/)){
+    line=line.replace(/^\s*(?:[-*•·>]|\d+[.)-])\s*/,'').replace(/\[[^\]]*\]\s*/g,'').replace(/\s+/g,' ').trim();if(!line)continue;
+    if(/:$/.test(line)&&line.length<60){grp=line.slice(0,-1).trim();continue}
+    const party='L'+stamp+(++pn);let notes='',meal='',age='Adult';
+    line=line.replace(/\(([^)]*)\)/g,(m,x)=>{if(/^\d+$/.test(x.trim()))return' '+x.trim();const s=normTxt(x);if(/jain/.test(s))meal='Jain';else if(/vegan/.test(s))meal='Vegan';else if(/veg/.test(s))meal='Vegetarian';else if(/kid|child|nin/.test(s))age='Child';else notes=notes?notes+' · '+x.trim():x.trim();return''}).replace(/\s+/g,' ').trim();
+    const mk=(first,last,extra={})=>{const g=newGuest(Object.assign({first,last,party,group:grp,meal,age,notes},extra));g._set=new Set(['first','last','group','party',...(meal?['meal']:[]),...(notes?['notes']:[])]);out.push(g);return g};
+    const split=s=>{const p=s.trim().split(' ');return[p[0],p.slice(1).join(' ')]};
+    let m;
+    if((m=line.match(/^familia\s+(.+?)(?:\s+(\d+))?$/i))||(m=line.match(/^(?:the\s+)?(.+?)\s+(?:family|familia)\s*(?:[-x×:]\s*|of\s+)?(\d+)?$/i))){const n=Math.min(12,+(m[2]||4));for(let i=1;i<=n;i++)mk('Guest '+i,m[1],{notes:'Name to confirm'});continue}
+    if(m=line.match(/^(.+?)\s*\+\s*(\d+)$/)){const [f,l]=split(m[1]);mk(f,l);for(let i=1;i<=Math.min(8,+m[2]);i++)mk('Guest of',f+' '+l,{notes:'Name to confirm'});continue}
+    if(m=line.match(/^(?:mr\.?|sr\.?)\s*(?:&|and|y)\s*(?:mrs\.?|sra\.?)\s+(.+)$/i)){const [f,l]=split(m[1]);mk(f,l,{gender:'M'});mk(/^sr/i.test(line)?'Sra.':'Mrs.',l,{gender:'F',notes:'Name to confirm'});continue}
+    if(m=line.match(/^(\S+)(?:\s*&\s*|\s+(?:and|y)\s+)(\S+)\s+(\S.*)$/i)){mk(m[1],m[3]);mk(m[2],m[3]);continue}
+    const parts=line.split(/\s*(?:,|;|&|\/|\band\b|\s\by\b)\s*/i).filter(Boolean);
+    let lastL='';parts.slice().reverse().forEach(p=>{if(!lastL&&p.split(' ').length>1)lastL=split(p)[1]});
+    parts.forEach(p=>{const [f,l]=split(p);mk(f,l||lastL)});
+  }
+  return out;
+}
+const nameKey=g=>normTxt((g.first||'')+' '+(g.last||''));
+function planMerge(incoming){
+  const byId=Object.fromEntries(S.guests.map(g=>[g.id,g]));const byName={};S.guests.forEach(g=>{const k=nameKey(g);(byName[k]||(byName[k]=[])).push(g)});
+  const plan={add:[],upd:[],same:0,unknown:0,msgs:[]};const FIELDS=['rsvp','meal','group','side','gender','age','party','address','vip'];
+  for(const x of incoming){let m=null;
+    if(x._gid){m=byId[x._gid];if(!m){plan.unknown++;continue}}
+    else{const c=byName[nameKey(x)];if(c&&c.length===1)m=c[0]}
+    if(!m){plan.add.push(x);continue}
+    const ch=[];for(const f of FIELDS)if(x._set.has(f)&&x[f]!==''&&x[f]!==m[f])ch.push([f,m[f],x[f]]);
+    if(x._set.has('notes')&&x.notes&&!(m.notes||'').includes(x.notes))ch.push(['notes',m.notes,m.notes?m.notes+' · '+x.notes:x.notes]);
+    if(x._table&&x._table!==m.table)ch.push(['table',m.table,x._table]);
+    if(x._message)plan.msgs.push({g:m,text:x._message});
+    if(ch.length)plan.upd.push({g:m,ch});else plan.same++;
+  }
+  return plan;
+}
+function cleanNew(x){const g=Object.assign({},x);if(x._table){g.table=x._table;g.seat=null}delete g._set;delete g._gid;delete g._message;delete g._table;if(!g.party)g.party='N'+g.id.slice(-5);return g}
+function applyImport(list,plan,replace){
+  snap();
+  if(replace){S.guests=list.filter(x=>!x._gid).map(cleanNew);S.prefs=[]}
+  else{
+    for(const u of plan.upd)for(const [f,,v] of u.ch){if(f==='table'){u.g.table=v;u.g.seat=null;const t=tById(v);if(t){const taken=new Set(S.guests.filter(o=>o.table===v&&o!==u.g).map(o=>o.seat));let s=0;while(taken.has(s))s++;if(s<t.seats)u.g.seat=s;else u.g.table=null}}else u.g[f]=v}
+    for(const x of plan.add){const g=cleanNew(x);if(g.table){const t=tById(g.table),taken=new Set(S.guests.filter(o=>o.table===g.table).map(o=>o.seat));let s=0;while(taken.has(s))s++;if(t&&s<t.seats)g.seat=s;else g.table=null}S.guests.push(g)}
+    for(const m of plan.msgs){const k=m.g.party||m.g.id;S.rsvp.messages=S.rsvp.messages.filter(x=>x.party!==k);S.rsvp.messages.unshift({party:k,names:partyNames(S.guests.filter(o=>(o.party||o.id)===k)),text:m.text,at:new Date().toISOString()})}
+  }
+  S.rsvp.lastImport={at:new Date().toISOString(),updated:plan.upd.length,added:replace?list.length:plan.add.length};
+  normalize(S);persist();
+}
+const FIELD_LABEL={rsvp:'Reply',meal:'Meal',group:'Group',side:'Side',gender:'Gender',age:'Age',party:'Household',address:'Address',vip:'VIP',notes:'Notes',table:'Table'};
+function fmtVal(f,v){if(f==='rsvp')return{Yes:'Attending',No:'Declined',Pending:'Awaiting'}[v]||v||'—';if(f==='vip')return v?'Yes':'No';if(f==='table')return(tById(v)||{}).name||'—';return v||'—'}
+function openImport(opts={}){
+  let src=opts.src||'file',list=null,head=null;
+  const srcs=[['file','Upload a file'],['paste','Paste from a spreadsheet'],['plain','Paste a written list']];
+  openModal(`<h2>${opts.title||'Import guests'}</h2>
+    <div class="seg full" id="imSrc">${srcs.map(([k,l])=>`<button data-v="${k}" aria-pressed="${src===k}">${l}</button>`).join('')}</div>
+    <div id="imIn"></div><div id="imPrev"></div>
+    <div class="mfoot"><button class="btn" id="imCancel">Cancel</button><button class="btn pri" id="imGo" disabled>Apply changes</button></div>`,m=>{
+    const inBox=$('#imIn',m),prev=$('#imPrev',m);
+    const drawIn=()=>{list=null;head=null;prev.innerHTML='';$('#imGo',m).disabled=true;
+      inBox.innerHTML=src==='file'?`<div class="drop"><input type="file" id="imFile" accept=".xlsx,.xls,.csv,.tsv,.txt"><p class="hint">Excel or CSV. Also works with Google Sheets and Google Forms downloads, wedding-website exports, and the replies file from your RSVP page.</p></div>`
+        :src==='paste'?`<textarea id="imPaste" rows="6" placeholder="Copy the rows in Excel or Google Sheets, including the heading row, and paste them here."></textarea>`
+        :`<textarea id="imPlain" rows="8" placeholder="One household per line. For example:&#10;Bride's family:&#10;Javier & Lucía Morales&#10;Mr & Mrs Rahul Shah&#10;Neha Kapoor + 1&#10;Patel family (4)&#10;Karan Mehta (veg)"></textarea><label class="f" style="margin-top:10px">Group for these guests (optional)<input id="imGroup" placeholder="e.g. Groom’s friends"></label><p class="hint" style="margin-top:6px">Works with lists copied from WhatsApp, email or notes. A line ending in “:” starts a new group. Everyone starts as awaiting reply.</p>`;
+      const f=$('#imFile',m);if(f)f.onchange=async e=>{const fl=e.target.files[0];if(!fl)return;
+        if(/\.xlsx?$/i.test(fl.name)){if(typeof XLSX==='undefined'){toast('The Excel reader didn’t load. Save the sheet as CSV and try again.');return}
+          const wb=XLSX.read(await fl.arrayBuffer(),{type:'array'});tab(XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]],{header:1,raw:false,defval:''}))}
+        else tab(parseText(await fl.text()))};
+      const p=$('#imPaste',m);if(p)p.oninput=()=>tab(parseText(p.value));
+      const pl=$('#imPlain',m),gr=$('#imGroup',m);if(pl){const go=()=>{list=parsePlain(pl.value,gr.value.trim());head=null;show()};pl.oninput=go;gr.oninput=go}};
+    const tab=rows=>{if(!rows||rows.length<2){list=[];head=null;show();return}const r=rowsToGuests(rows);list=r.guests;head=r.head;show()};
+    const show=()=>{if(!list||!list.length){prev.innerHTML=list?'<p class="hint">No guests found yet. Check that the first row holds column names.</p>':'';$('#imGo',m).disabled=true;return}
+      const isReplies=list.some(x=>x._gid);const plan=planMerge(list);const mode=(($('input[name=imMode]:checked',m)||{}).value)||'merge';
+      const changes=plan.upd.slice(0,8).map(u=>`<li><b>${esc(fullName(u.g))}</b> <span class="meta">${u.ch.map(([f,a,b])=>`${FIELD_LABEL[f]}: ${esc(fmtVal(f,a))} → ${esc(fmtVal(f,b))}`).join(' · ')}</span></li>`).join('');
+      prev.innerHTML=`${head?`<div class="mapchips" style="margin-bottom:12px">${head.map(x=>`<span class="${x.k?'':'no'}" title="${x.k?'Read as '+LABEL[x.k]:'Not used'}">${esc(x.h)}${x.k?' → '+LABEL[x.k]:''}</span>`).join('')}</div>`:''}
+        <div class="kpis" style="grid-template-columns:repeat(3,minmax(0,1fr));margin-bottom:10px">
+          <div class="kpi" style="padding:12px 14px"><span class="l">New guests</span><span class="n" style="font-size:28px">${mode==='replace'?list.length:plan.add.length}</span></div>
+          <div class="kpi" style="padding:12px 14px"><span class="l">Updated</span><span class="n" style="font-size:28px">${mode==='replace'?0:plan.upd.length}</span></div>
+          <div class="kpi" style="padding:12px 14px"><span class="l">Unchanged</span><span class="n" style="font-size:28px">${mode==='replace'?0:plan.same}</span></div></div>
+        ${plan.unknown?`<p class="hint" style="color:var(--warn)">${plan.unknown} replies belong to guests no longer on the list and will be skipped.</p>`:''}
+        ${mode!=='replace'&&changes?`<ul class="slist" style="font-size:13px;margin-bottom:6px">${changes}</ul>${plan.upd.length>8?`<p class="hint">and ${plan.upd.length-8} more updates.</p>`:''}`:''}
+        ${mode!=='replace'&&plan.add.length?`<p class="hint">New: ${plan.add.slice(0,6).map(x=>esc(fullName(x))).join(', ')}${plan.add.length>6?` and ${plan.add.length-6} more`:''}.</p>`:''}
+        ${isReplies?'':`<div class="row" style="margin-top:12px"><label class="chk"><input type="radio" name="imMode" value="merge" ${mode==='merge'?'checked':''}> Update matching guests and add new ones</label><label class="chk"><input type="radio" name="imMode" value="replace" ${mode==='replace'?'checked':''}> Replace the whole list</label></div>
+        <p class="hint" style="margin-top:6px">Guests are matched by first and last name. Existing details are only changed where the file has a value.</p>`}`;
+      $$('input[name=imMode]',m).forEach(r=>r.onchange=show);
+      $('#imGo',m).disabled=mode==='merge'&&!plan.add.length&&!plan.upd.length&&!plan.msgs.length;
+      $('#imGo',m).onclick=()=>{const md=(($('input[name=imMode]:checked',m)||{}).value)||'merge';applyImport(list,plan,md==='replace');closeModal();ui.q='';ui.rsvpF='';ui.groupF='';render();
+        toast(md==='replace'?`Guest list replaced with ${list.length} guests`:`${plan.add.length} added · ${plan.upd.length} updated${plan.msgs.length?` · ${plan.msgs.length} messages`:''}`)};
+    };
+    $('#imSrc',m).onclick=e=>{const b=e.target.closest('button');if(!b)return;src=b.dataset.v;$$('#imSrc button',m).forEach(x=>x.setAttribute('aria-pressed',x===b));drawIn()};
     $('#imCancel',m).onclick=closeModal;
-    $('#imTpl',m).onclick=()=>saveXLSX('guest-list-template.xlsx',[{name:'Guests',rows:[['First name','Last name','Household','Group','Side','Gender','Age','RSVP','Meal','VIP','Notes','Address'],['Ana','Morales','H001','Wedding party','Bride','F','Adult','Yes','Fish','Yes','','Calle Durango 120, Col. Roma Norte, Ciudad de México'],['Rohan','Mehta','H001','Wedding party','Groom','M','Adult','Yes','Vegetarian','Yes','','']]}]);
-    $('#imGo',m).onclick=()=>{const list=ui.importRows||[];if(!list.length)return;snap();
-      const replace=$('input[name=imMode]:checked',m).value==='replace';if(replace){S.guests=[];S.prefs=[]}
-      S.guests.push(...list);persist();closeModal();ui.q='';ui.rsvpF='';ui.groupF='';render();toast(`Imported ${list.length} guests`)};
+    drawIn();
   });
+}
+
+const RSVP_PAGE="<!doctype html>\n<html lang=\"en\">\n<head>\n<meta charset=\"utf-8\">\n<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">\n<meta name=\"robots\" content=\"noindex\">\n<title>RSVP<\/title>\n<link rel=\"preconnect\" href=\"https://fonts.googleapis.com\">\n<link rel=\"preconnect\" href=\"https://fonts.gstatic.com\" crossorigin>\n<link rel=\"stylesheet\" href=\"https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@400;500;600&family=Figtree:wght@400;500;600&family=Great+Vibes&family=Parisienne&family=Playfair+Display:wght@400;600&family=DM+Serif+Display&family=Montserrat:wght@400;600&display=swap\">\n<style>\n:root{--a:#6B3A66;--ink:#2A2730;--bg:#F6F3F6;--card:#FFFFFF;--line:#E6E0E6;--muted:#6F6876;--soft:#F4EDF3;--bad:#A8362F;--nf:'Great Vibes',cursive}\n*{box-sizing:border-box}\nhtml,body{margin:0}\nbody{background:var(--bg);color:var(--ink);font-family:Figtree,system-ui,-apple-system,'Segoe UI',sans-serif;font-size:16px;line-height:1.55;-webkit-font-smoothing:antialiased}\n.wrap{max-width:560px;margin:0 auto;padding:20px 16px 64px}\n.bar{display:flex;justify-content:flex-end}\n.lang{display:inline-flex;border:1px solid var(--line);border-radius:999px;padding:3px;background:var(--card)}\n.lang button{border:0;background:none;font:600 12px Figtree,sans-serif;letter-spacing:.06em;padding:5px 11px;border-radius:999px;cursor:pointer;color:var(--muted)}\n.lang button[aria-pressed=\"true\"]{background:var(--a);color:#fff}\n.top{text-align:center;padding:26px 0 26px}\n.eyebrow{font:600 11px Montserrat,Figtree,sans-serif;letter-spacing:.28em;text-transform:uppercase;color:var(--a)}\n.names{font-family:var(--nf);color:var(--a);font-size:clamp(44px,12vw,68px);line-height:1.1;margin:10px 0 4px;font-weight:400}\n.rule{width:56px;height:1px;background:var(--a);margin:14px auto;opacity:.6}\n.when{font-family:'Cormorant Garamond',Georgia,serif;font-size:20px;line-height:1.4}\n.by{margin-top:10px;font-size:14px;color:var(--muted)}\n.card{background:var(--card);border:1px solid var(--line);border-radius:20px;padding:26px 22px;box-shadow:0 1px 2px rgba(40,20,40,.04),0 14px 40px rgba(40,20,40,.07)}\nh2{font-family:'Cormorant Garamond',Georgia,serif;font-weight:600;font-size:28px;line-height:1.2;margin:0 0 6px}\n.lead{color:var(--muted);margin:0 0 18px}\nlabel.f{display:grid;gap:6px;font-size:13px;font-weight:600;color:var(--muted);margin-top:14px}\ninput,select,textarea{font:inherit;font-size:16px;color:var(--ink);width:100%;border:1px solid #D8D0D8;border-radius:12px;padding:11px 13px;background:#fff}\ntextarea{min-height:88px;resize:vertical}\ninput:focus,select:focus,textarea:focus,button:focus-visible{outline:2px solid var(--a);outline-offset:1px}\n.code{font-size:24px;letter-spacing:.24em;text-align:center;text-transform:uppercase;font-weight:600}\n.btn{display:block;width:100%;margin-top:20px;padding:15px;border:0;border-radius:14px;background:var(--a);color:#fff;font:600 16px Figtree,sans-serif;cursor:pointer}\n.btn:disabled{opacity:.6;cursor:default}\n.btn.ghost{background:none;color:var(--a);border:1px solid var(--line)}\n.err{color:var(--bad);font-size:14px;margin:12px 0 0}\n.person{border-top:1px solid var(--line);padding:20px 0 4px}\n.person:first-of-type{border-top:0;padding-top:4px}\n.pn{font-weight:600;font-size:17px;margin-bottom:10px}\n.choice{display:grid;grid-template-columns:1fr 1fr;gap:8px}\n.choice button{padding:12px 8px;border:1px solid #D8D0D8;border-radius:12px;background:#fff;font:500 15px Figtree,sans-serif;cursor:pointer;color:var(--ink)}\n.choice button[aria-pressed=\"true\"].yes{background:var(--a);border-color:var(--a);color:#fff}\n.choice button[aria-pressed=\"true\"].no{background:var(--soft);border-color:var(--a);color:var(--ink)}\n.done{text-align:center}\n.done .names{font-size:48px}\n.sum{list-style:none;padding:0;margin:18px 0 0;text-align:left;border-top:1px solid var(--line)}\n.sum li{display:flex;justify-content:space-between;gap:12px;padding:10px 0;border-bottom:1px solid var(--line);font-size:15px}\n.sum span{color:var(--muted)}\n.hp{position:absolute;left:-9999px;width:1px;height:1px;overflow:hidden}\n.foot{text-align:center;color:var(--muted);font-size:12px;margin-top:26px}\n<\/style>\n<\/head>\n<body>\n<div class=\"wrap\" id=\"app\"><\/div>\n<script>\nconst C=/*__CONFIG__*/null;\nconst T={\n en:{reply:'Kindly reply',by:'Please reply by',find:'Find your invitation',findLead:'Enter the code printed on your invitation or sent in your message.',code:'Invitation code',open:'Continue',nf:'We couldn\u2019t find that code. Check your invitation and try again.',dear:'Dear',lead:'Let us know who will be joining us.',yes:'Joyfully accepts',no:'Regretfully declines',meal:'Meal',pick:'Choose a meal',diet:'Dietary needs or allergies',opt:'Optional',msg:'Message for the hosts',send:'Send reply',sending:'Sending\u2026',thanks:'Thank you',got:'Your reply has been received.',attending:'Attending',declining:'Not attending',change:'Change my reply',fail:'Your reply didn\u2019t send. Check your connection and try again.',needAns:'Please tell us whether each guest is coming.',needMeal:'Please choose a meal for everyone who is attending.',unsupported:'This browser can\u2019t open the invitation. Please try a recent version of Chrome, Safari or Edge.'},\n es:{reply:'Confirma tu asistencia',by:'Por favor confirma antes del',find:'Encuentra tu invitaci\u00f3n',findLead:'Escribe el c\u00f3digo impreso en tu invitaci\u00f3n o enviado en tu mensaje.',code:'C\u00f3digo de invitaci\u00f3n',open:'Continuar',nf:'No encontramos ese c\u00f3digo. Revisa tu invitaci\u00f3n e int\u00e9ntalo de nuevo.',dear:'Querido(s)',lead:'Cu\u00e9ntanos qui\u00e9n nos acompa\u00f1ar\u00e1.',yes:'Con gusto asistir\u00e1',no:'Lamentablemente no asistir\u00e1',meal:'Platillo',pick:'Elige un platillo',diet:'Restricciones alimentarias o alergias',opt:'Opcional',msg:'Mensaje para los anfitriones',send:'Enviar respuesta',sending:'Enviando\u2026',thanks:'Gracias',got:'Recibimos tu respuesta.',attending:'Asistir\u00e1',declining:'No asistir\u00e1',change:'Cambiar mi respuesta',fail:'No se pudo enviar tu respuesta. Revisa tu conexi\u00f3n e int\u00e9ntalo de nuevo.',needAns:'Ind\u00edcanos si cada invitado asistir\u00e1.',needMeal:'Elige un platillo para cada persona que asistir\u00e1.',unsupported:'Este navegador no puede abrir la invitaci\u00f3n. Prueba con una versi\u00f3n reciente de Chrome, Safari o Edge.'}\n};\nconst MEAL_ES={'Beef':'Res','Chicken':'Pollo','Fish':'Pescado','Vegetarian':'Vegetariano','Vegan':'Vegano','Jain':'Jain','Child menu':'Men\u00fa infantil'};\nlet lang=C.lang==='es'?'es':'en',view='code',hh=null,code='',ans={},message='',err='',busy=false;\nconst L=()=>T[lang];\nconst esc=s=>String(s==null?'':s).replace(/[&<>\"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;',\"'\":'&#39;'}[c]));\nconst mealName=m=>lang==='es'?(MEAL_ES[m]||m):m;\ndocument.documentElement.style.setProperty('--a',C.accent||'#6B3A66');\ndocument.documentElement.style.setProperty('--nf',C.font||\"'Great Vibes',cursive\");\ndocument.title=(lang==='es'?'Confirmaci\u00f3n \u00b7 ':'RSVP \u00b7 ')+C.event;\nconst enc=new TextEncoder();\nasync function sha(s){const b=await crypto.subtle.digest('SHA-256',enc.encode(s));return Array.from(new Uint8Array(b),x=>x.toString(16).padStart(2,'0')).join('')}\nconst b64d=s=>Uint8Array.from(atob(s),c=>c.charCodeAt(0));\nasync function unlock(raw){\n  code=String(raw||'').toUpperCase().replace(/[^A-Z0-9]/g,'');err='';\n  if(!window.crypto||!crypto.subtle){err=L().unsupported;render();return}\n  if(code.length<4){err=L().nf;render();return}\n  busy=true;render();\n  try{\n    const id=await sha('mesa|'+C.slug+'|'+code);const e=C.entries[id];if(!e)throw 0;\n    const base=await crypto.subtle.importKey('raw',enc.encode(code),'PBKDF2',false,['deriveKey']);\n    const key=await crypto.subtle.deriveKey({name:'PBKDF2',salt:enc.encode('mesa|'+C.slug),iterations:C.iter,hash:'SHA-256'},base,{name:'AES-GCM',length:256},false,['decrypt']);\n    const pt=await crypto.subtle.decrypt({name:'AES-GCM',iv:b64d(e.iv)},key,b64d(e.ct));\n    hh=JSON.parse(new TextDecoder().decode(pt));hh.id=id;ans={};\n    hh.members.forEach(m=>ans[m.id]={rsvp:m.rsvp==='Yes'||m.rsvp==='No'?m.rsvp:'',meal:m.meal||'',diet:''});\n    view='form';\n  }catch(x){err=L().nf}\n  busy=false;render();\n}\nasync function send(){\n  err='';\n  const list=hh.members.map(m=>Object.assign({gid:m.id},ans[m.id]));\n  if(list.some(a=>!a.rsvp)){err=L().needAns;render();return}\n  if(C.meals.length&&list.some(a=>a.rsvp==='Yes'&&!a.meal)){err=L().needMeal;render();return}\n  busy=true;render();\n  try{\n    const r=await fetch('save.php',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:hh.id,code,answers:list,message,hp:(document.getElementById('hp')||{}).value||''})});\n    const j=await r.json();if(!r.ok||!j.ok)throw 0;view='done';\n  }catch(x){err=L().fail}\n  busy=false;render();\n}\nfunction header(){\n  return`<div class=\"bar\"><div class=\"lang\" role=\"group\" aria-label=\"Language\"><button data-lang=\"en\" aria-pressed=\"${lang==='en'}\">EN<\/button><button data-lang=\"es\" aria-pressed=\"${lang==='es'}\">ES<\/button><\/div><\/div>\n  <header class=\"top\"><div class=\"eyebrow\">${esc(L().reply)}<\/div><h1 class=\"names\">${esc(C.event)}<\/h1><div class=\"rule\"><\/div>\n  <div class=\"when\">${esc(C.date[lang])}<br>${esc(C.venue)}<\/div>${C.deadline[lang]?`<div class=\"by\">${esc(L().by)} ${esc(C.deadline[lang])}<\/div>`:''}<\/header>`;\n}\nfunction render(){\n  const a=document.getElementById('app');let body='';\n  if(view==='code'){\n    body=`<form class=\"card\" id=\"cf\"><h2>${esc(L().find)}<\/h2><p class=\"lead\">${esc(L().findLead)}<\/p>\n      <label class=\"f\">${esc(L().code)}<input class=\"code\" id=\"ci\" autocomplete=\"off\" autocapitalize=\"characters\" spellcheck=\"false\" maxlength=\"12\" value=\"${esc(code)}\" placeholder=\"ABC-123\"><\/label>\n      ${err?`<p class=\"err\" role=\"alert\">${esc(err)}<\/p>`:''}<button class=\"btn\" ${busy?'disabled':''}>${esc(busy?'\u2026':L().open)}<\/button><\/form>`;\n  }else if(view==='form'){\n    body=`<form class=\"card\" id=\"ff\"><h2>${esc(L().dear)} ${esc(hh.names)}<\/h2><p class=\"lead\">${esc(L().lead)}<\/p>\n      ${hh.members.map(m=>{const s=ans[m.id];return`<div class=\"person\"><div class=\"pn\">${esc((m.first+' '+m.last).trim())}<\/div>\n        <div class=\"choice\" role=\"group\"><button type=\"button\" class=\"yes\" data-g=\"${m.id}\" data-v=\"Yes\" aria-pressed=\"${s.rsvp==='Yes'}\">${esc(L().yes)}<\/button><button type=\"button\" class=\"no\" data-g=\"${m.id}\" data-v=\"No\" aria-pressed=\"${s.rsvp==='No'}\">${esc(L().no)}<\/button><\/div>\n        ${s.rsvp==='Yes'?`${C.meals.length?`<label class=\"f\">${esc(L().meal)}<select data-g=\"${m.id}\" data-k=\"meal\"><option value=\"\">${esc(L().pick)}<\/option>${C.meals.map(x=>`<option value=\"${esc(x)}\" ${s.meal===x?'selected':''}>${esc(mealName(x))}<\/option>`).join('')}<\/select><\/label>`:''}\n        <label class=\"f\">${esc(L().diet)}<input data-g=\"${m.id}\" data-k=\"diet\" value=\"${esc(s.diet)}\" placeholder=\"${esc(L().opt)}\"><\/label>`:''}<\/div>`}).join('')}\n      <label class=\"f\" style=\"margin-top:22px\">${esc(L().msg)}<textarea id=\"msg\" placeholder=\"${esc(L().opt)}\">${esc(message)}<\/textarea><\/label>\n      <div class=\"hp\" aria-hidden=\"true\"><input id=\"hp\" tabindex=\"-1\" autocomplete=\"off\"><\/div>\n      ${err?`<p class=\"err\" role=\"alert\">${esc(err)}<\/p>`:''}<button class=\"btn\" ${busy?'disabled':''}>${esc(busy?L().sending:L().send)}<\/button><\/form>`;\n  }else{\n    body=`<div class=\"card done\"><h2>${esc(L().thanks)}<\/h2><p class=\"lead\">${esc(L().got)}<\/p>\n      <ul class=\"sum\">${hh.members.map(m=>{const s=ans[m.id];return`<li><b>${esc((m.first+' '+m.last).trim())}<\/b><span>${esc(s.rsvp==='Yes'?L().attending+(s.meal?' \u00b7 '+mealName(s.meal):''):L().declining)}<\/span><\/li>`}).join('')}<\/ul>\n      <button class=\"btn ghost\" id=\"again\">${esc(L().change)}<\/button><\/div>`;\n  }\n  a.innerHTML=header()+body+`<p class=\"foot\">${esc(C.event)}<\/p>`;\n}\ndocument.addEventListener('click',e=>{\n  const l=e.target.closest('[data-lang]');if(l){lang=l.dataset.lang;render();return}\n  const c=e.target.closest('.choice button');if(c){ans[c.dataset.g].rsvp=c.dataset.v;render();return}\n  if(e.target.id==='again'){view='form';render()}\n});\ndocument.addEventListener('input',e=>{const t=e.target;if(t.dataset.g&&t.dataset.k)ans[t.dataset.g][t.dataset.k]=t.value;if(t.id==='msg')message=t.value;if(t.id==='ci')code=t.value});\ndocument.addEventListener('change',e=>{const t=e.target;if(t.dataset.g&&t.dataset.k)ans[t.dataset.g][t.dataset.k]=t.value});\ndocument.addEventListener('submit',e=>{e.preventDefault();if(busy)return;if(e.target.id==='cf')unlock(document.getElementById('ci').value);if(e.target.id==='ff')send()});\nconst q=new URLSearchParams(location.search).get('c');\nrender();if(q){code=q;unlock(q)}\n<\/script>\n<\/body>\n<\/html>\n";
+const PHP_SAVE="<?php\n// Mesa RSVP: receives one household's reply and appends it to data/responses.jsonl\nheader('Content-Type: application/json; charset=utf-8');\nheader('Cache-Control: no-store');\n$cfg = require __DIR__ . '/config.php';\nfunction out($code, $arr) { http_response_code($code); echo json_encode($arr); exit; }\nfunction cut($s, $n) { $s = trim((string)$s); return function_exists('mb_substr') ? mb_substr($s, 0, $n) : substr($s, 0, $n); }\nif (($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST') out(405, ['ok' => false]);\n$raw = file_get_contents('php://input', false, null, 0, 20000);\n$d = json_decode($raw, true);\nif (!is_array($d) || !empty($d['hp'])) out(400, ['ok' => false]);\n$id = preg_replace('/[^a-f0-9]/', '', (string)($d['id'] ?? ''));\n$code = preg_replace('/[^A-Z0-9]/', '', strtoupper((string)($d['code'] ?? '')));\nif ($id === '' || !isset($cfg['households'][$id])) out(403, ['ok' => false, 'error' => 'code']);\nif (!hash_equals($id, hash('sha256', 'mesa|' . $cfg['slug'] . '|' . $code))) out(403, ['ok' => false, 'error' => 'code']);\n$allowed = $cfg['households'][$id];\n$answers = [];\nforeach ((array)($d['answers'] ?? []) as $a) {\n  if (!is_array($a)) continue;\n  $gid = (string)($a['gid'] ?? '');\n  if (!in_array($gid, $allowed, true)) continue;\n  $answers[] = [\n    'gid' => $gid,\n    'rsvp' => (($a['rsvp'] ?? '') === 'Yes') ? 'Yes' : 'No',\n    'meal' => cut($a['meal'] ?? '', 40),\n    'diet' => cut($a['diet'] ?? '', 200),\n  ];\n}\nif (!$answers) out(400, ['ok' => false]);\n$rec = ['id' => $id, 'at' => gmdate('c'), 'answers' => $answers, 'message' => cut($d['message'] ?? '', 1000)];\n$dir = __DIR__ . '/data';\nif (!is_dir($dir)) @mkdir($dir, 0750, true);\n$ok = file_put_contents($dir . '/responses.jsonl', json_encode($rec, JSON_UNESCAPED_UNICODE) . \"\\n\", FILE_APPEND | LOCK_EX);\nif ($ok === false) out(500, ['ok' => false]);\nout(200, ['ok' => true]);\n";
+const PHP_RESPONSES="<?php\n// Mesa RSVP: downloads the latest reply for every guest as a CSV. Needs ?key=<admin key>.\n$cfg = require __DIR__ . '/config.php';\n$key = (string)($_GET['key'] ?? '');\nif ($key === '' || !hash_equals($cfg['admin_key'], $key)) { http_response_code(403); header('Content-Type: text/plain'); exit('Not allowed.'); }\n$file = __DIR__ . '/data/responses.jsonl';\n$latest = [];\nif (is_file($file)) {\n  foreach (file($file, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES) as $line) {\n    $r = json_decode($line, true);\n    if (!is_array($r) || empty($r['answers'])) continue;\n    foreach ($r['answers'] as $a) {\n      $latest[$a['gid']] = [$a['gid'], $a['rsvp'], $a['meal'], $a['diet'], $r['message'] ?? '', $r['at'] ?? ''];\n    }\n  }\n}\nheader('Content-Type: text/csv; charset=utf-8');\nheader('Cache-Control: no-store');\nheader('Content-Disposition: attachment; filename=\"rsvp-replies-' . $cfg['slug'] . '-' . gmdate('Y-m-d') . '.csv\"');\n$out = fopen('php://output', 'w');\nfwrite($out, \"\\xEF\\xBB\\xBF\");\nfputcsv($out, ['Guest ID', 'RSVP', 'Meal', 'Dietary', 'Message', 'Submitted']);\nforeach ($latest as $row) fputcsv($out, $row);\nfclose($out);\n";
+/* ================= INVITES & REPLIES ================= */
+const CODE_ALPH='ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+function randStr(n,alph=CODE_ALPH){const a=new Uint32Array(n);(window.crypto||{}).getRandomValues?crypto.getRandomValues(a):a.forEach((_,i)=>a[i]=Math.floor(Math.random()*1e9));return Array.from(a,x=>alph[x%alph.length]).join('')}
+function defaultRsvp(d){return{base:'https://theindiantravellife.com.mx/rsvp',slug:slug(d.event.name),deadline:'',lang:'en',meals:[...MEALS],adminKey:randStr(28,'abcdefghijkmnopqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789'),codes:{},messages:[],lastImport:null,kitAt:null,
+  msgTpl:'Hi {names}! You’re invited to {event} on {date} at {venue}.\nPlease let us know if you can come by {deadline}:\n{link}\nYour invitation code: {code}'}}
+function freshSample(){const d=makeSample();d.rsvp=defaultRsvp(d);d.rsvp.deadline='2027-01-10';return d}
+const pKey=g=>g.party||('solo-'+g.id);
+const normCode=c=>String(c).toUpperCase().replace(/[^A-Z0-9]/g,'');
+function ensureCodes(){let changed=false;const used=new Set(Object.values(S.rsvp.codes));
+  for(const g of S.guests){const k=pKey(g);if(!S.rsvp.codes[k]){let c;do{c=randStr(3)+'-'+randStr(3)}while(used.has(c));used.add(c);S.rsvp.codes[k]=c;changed=true}}
+  if(changed)persist();return S.rsvp.codes}
+function households(){const codes=ensureCodes();return parties(S.guests).map(mem=>({key:pKey(mem[0]),mem,code:codes[pKey(mem[0])]}))}
+const rsvpBase=()=>`${String(S.rsvp.base||'').trim().replace(/\/+$/,'')}/${slug(S.rsvp.slug||S.event.name)}/`;
+const rsvpLink=code=>rsvpBase()+'?c='+normCode(code);
+function fmtDateEs(iso){if(!iso)return'';const d=new Date(iso+'T12:00:00');if(isNaN(d))return iso;return d.toLocaleDateString('es-MX',{weekday:'long',day:'numeric',month:'long',year:'numeric'})}
+function msgFor(h){const r=S.rsvp;return r.msgTpl.replace(/\{(\w+)\}/g,(m,k)=>({names:partyNames(h.mem),first:h.mem[0].first,event:S.event.name,date:fmtDate(S.event.date),venue:S.event.venue,deadline:r.deadline?fmtDate(r.deadline):'soon',link:rsvpLink(h.code),code:h.code}[k]??m))}
+function copyText(text,done='Copied'){
+  const fallback=()=>openModal(`<h2>Copy this text</h2><p class="hint">Your browser blocked automatic copying. The text is selected. Press Ctrl+C (or ⌘C) to copy it.</p><textarea id="cpt" rows="10">${esc(text)}</textarea><div class="mfoot"><button class="btn pri" id="cpx">Done</button></div>`,m=>{const t=$('#cpt',m);t.focus();t.select();$('#cpx',m).onclick=closeModal});
+  try{navigator.clipboard.writeText(text).then(()=>toast(done),fallback)}catch(e){fallback()}
+}
+function hhStatus(mem){const w=mem.filter(g=>g.rsvp==='Pending').length;if(w)return['warn','Waiting'];const y=mem.filter(g=>g.rsvp==='Yes').length;return y?['ok',`${y} coming`]:['mute','Declined']}
+async function sha256hex(s){const b=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(s));return Array.from(new Uint8Array(b),x=>x.toString(16).padStart(2,'0')).join('')}
+const b64e=u=>{let s='';for(const b of u)s+=String.fromCharCode(b);return btoa(s)};
+async function encryptFor(code,sl,obj,iter){const enc=new TextEncoder();
+  const base=await crypto.subtle.importKey('raw',enc.encode(code),'PBKDF2',false,['deriveKey']);
+  const key=await crypto.subtle.deriveKey({name:'PBKDF2',salt:enc.encode('mesa|'+sl),iterations:iter,hash:'SHA-256'},base,{name:'AES-GCM',length:256},false,['encrypt']);
+  const iv=crypto.getRandomValues(new Uint8Array(12));const ct=new Uint8Array(await crypto.subtle.encrypt({name:'AES-GCM',iv},key,enc.encode(JSON.stringify(obj))));
+  return{iv:b64e(iv),ct:b64e(ct)}}
+async function buildKitFiles(){
+  const r=S.rsvp,sl=slug(r.slug||S.event.name),iter=100000,entries={},hmap={};
+  for(const h of households()){const code=normCode(h.code),id=await sha256hex('mesa|'+sl+'|'+code);
+    entries[id]=await encryptFor(code,sl,{names:partyNames(h.mem),members:h.mem.map(g=>({id:g.id,first:g.first,last:g.last,age:g.age,rsvp:g.rsvp,meal:r.meals.includes(g.meal)?g.meal:''}))},iter);
+    hmap[id]=h.mem.map(g=>g.id)}
+  const cfg={slug:sl,event:S.event.name,date:{en:fmtDate(S.event.date),es:fmtDateEs(S.event.date)},venue:S.event.venue,deadline:{en:r.deadline?fmtDate(r.deadline):'',es:r.deadline?fmtDateEs(r.deadline):''},meals:r.meals,lang:r.lang,accent:S.stat.accent,font:fontCss(S.stat.font),iter,entries};
+  const page=RSVP_PAGE.replace('/*__CONFIG__*/null',JSON.stringify(cfg).replace(/</g,'\\u003c'));
+  const config=`<?php\n// Generated by Mesa for ${S.event.name.replace(/[\r\n]/g,' ')}. Keep this file private.\n$j = <<<'JSON'\n${JSON.stringify({slug:sl,admin_key:r.adminKey,households:hmap})}\nJSON;\nreturn json_decode($j, true);\n`;
+  let folder='public_html/rsvp/'+sl;try{folder='public_html'+new URL(rsvpBase()).pathname.replace(/\/$/,'')}catch(e){}
+  const readme=`MESA RSVP PAGE — ${S.event.name}
+==================================================
+
+Guests will open:   ${rsvpBase()}
+Each household has its own code. Their personal link opens the page with the code already filled in.
+
+UPLOAD (once)
+1. Log in to Hostinger and open Files → File Manager.
+2. Go to ${folder}  (create the folders if they don't exist).
+3. Upload this zip there and choose "Extract", so the folder holds index.html, save.php,
+   responses.php, config.php and the "data" folder.
+4. Open ${rsvpBase()}?c=${normCode((households()[0]||{}).code||'')} to test with the first household.
+
+COLLECT REPLIES
+Open this private address. It downloads a CSV of the latest reply from every guest:
+${rsvpBase()}responses.php?key=${r.adminKey}
+In Mesa, go to Invites & replies → Import replies and choose that file.
+Keep the address private: anyone who has it can download the replies.
+
+AFTER CHANGING THE GUEST LIST
+Download the RSVP page again from Mesa and upload only index.html and config.php.
+Existing codes stay the same, and replies already saved in the "data" folder are kept.
+
+REQUIREMENTS
+PHP 7.4 or newer (Hostinger's default is fine). The page works on phones and computers.
+Guest names are stored encrypted inside index.html; each household's code unlocks only its own names.
+`;
+  return{page,config,readme,sl};
+}
+async function downloadKit(btn){
+  if(typeof JSZip==='undefined'){toast('The zip tool didn’t load. Reload the page and try again.');return}
+  if(!(window.crypto&&crypto.subtle)){toast('This browser can’t prepare the RSVP page. Try a recent Chrome, Edge or Safari.');return}
+  if(!S.guests.length){toast('Add guests first.');return}
+  const old=btn.innerHTML;btn.disabled=true;btn.textContent='Preparing…';
+  try{const k=await buildKitFiles();const zip=new JSZip();
+    zip.file('index.html',k.page);zip.file('save.php',PHP_SAVE);zip.file('responses.php',PHP_RESPONSES);zip.file('config.php',k.config);
+    zip.file('data/.htaccess','Require all denied\n<IfModule !mod_authz_core.c>\n  Deny from all\n</IfModule>\n');zip.file('data/index.html','');zip.file('README.txt',k.readme);
+    const blob=await zip.generateAsync({type:'blob'});await saveFile(`rsvp-page-${k.sl}.zip`,blob);S.rsvp.kitAt=new Date().toISOString();persist();
+    const st=$('#kitAt');if(st)st.textContent='Last downloaded '+new Date(S.rsvp.kitAt).toLocaleString('en-GB',{dateStyle:'medium',timeStyle:'short'})}
+  catch(e){toast('Couldn’t prepare the RSVP page'+(e&&e.message?': '+e.message:'.'))}
+  finally{btn.disabled=false;btn.innerHTML=old}
+}
+function clientTemplate(){saveXLSX(`guest-list-template-${slug(S.event.name)}.xlsx`,[
+  {name:'Guests',rows:[['First name','Last name','Household','Group','Side','Age','RSVP','Meal','Dietary needs','VIP','Address'],
+    ['Ana','Morales','Morales-1','Family','Bride','Adult','Pending','','','Yes','Calle Durango 120, Col. Roma Norte, Ciudad de México'],
+    ['Javier','Morales','Morales-1','Family','Bride','Adult','Pending','','','',''],
+    ['Emilia','Morales','Morales-1','Family','Bride','Child','Pending','Child menu','Nut allergy','','']]},
+  {name:'How to fill this in',rows:[['How to fill in the guest list'],[''],['One row per person, including children.'],['Household: give everyone who is invited together the same value (for example Morales-1). They get one invitation and always sit together.'],['Group: how they know the hosts, for example Family, College friends, Work.'],['Side: Bride, Groom or Both (weddings only, optional).'],['Age: Adult or Child.'],['RSVP: leave as Pending. Guests reply through their RSVP link.'],['Meal and Dietary needs: fill in only if you already know.'],['Address: only needed if you want printed address labels.'],[''],['Delete the three example rows before sending the file back.']]}])}
+function viewCollect(el){
+  const r=S.rsvp,H=households(),waiting=H.filter(h=>hhStatus(h.mem)[1]==='Waiting').length;ui.cf=ui.cf||'';
+  el.innerHTML=pageHead('Invites & replies','Get the guest list from your client, send each household its RSVP link, then bring the replies back in.')+`
+  <div class="steps3">
+  <section class="card step"><span class="num">1</span><div class="stepb">
+    <div class="card-h"><h2>Get the guest list from your client</h2></div>
+    <p class="hint">Clients can send the list in whatever form they already have. Mesa reads all of these and matches people who are already on your list, so you can import updated versions as often as you like.</p>
+    <div class="mapchips" style="margin:12px 0 16px"><span>Excel</span><span>CSV</span><span>Google Sheets</span><span>Google Forms</span><span>Wedding-website exports</span><span>WhatsApp or typed lists</span></div>
+    <div class="row"><button class="btn pri" id="c1imp">${ic('upload',16)}Import guest list</button><button class="btn" id="c1tpl">${ic('download',16)}Client template (.xlsx)</button></div></div></section>
+
+  <section class="card step"><span class="num">2</span><div class="stepb">
+    <div class="card-h"><h2>Send RSVP links</h2><span>${H.length} households · ${waiting} waiting for a reply</span></div>
+    <div class="rgrid">
+      <label class="f">RSVP pages live at<input id="rb" value="${esc(r.base)}" placeholder="https://yourwebsite.com/rsvp"></label>
+      <label class="f">Event link<input id="rs" value="${esc(r.slug)}" placeholder="ana-rohan"></label>
+      <label class="f">Reply by<input type="date" id="rd" value="${esc(r.deadline)}"></label>
+      <label class="f">Page opens in<select id="rl"><option value="en" ${r.lang==='en'?'selected':''}>English</option><option value="es" ${r.lang==='es'?'selected':''}>Español</option></select></label>
+    </div>
+    <div style="margin-top:14px"><span class="eyebrow">Meals guests can choose</span><div class="mealpick" id="rm">${MEALS.map(m=>`<label class="chk mp"><input type="checkbox" value="${esc(m)}" ${r.meals.includes(m)?'checked':''}><i class="dot" style="background:${MEAL_COL[m]}"></i>${m}</label>`).join('')}</div><p class="hint">Untick them all to skip the meal question.</p></div>
+    <div class="linkbox"><span class="meta">Guests go to</span><code id="rbl">${esc(rsvpBase())}</code></div>
+    <div class="row"><button class="btn pri" id="kit">${ic('download',16)}Download RSVP page for Hostinger</button><span class="meta" id="kitAt">${r.kitAt?'Last downloaded '+new Date(r.kitAt).toLocaleString('en-GB',{dateStyle:'medium',timeStyle:'short'}):'Upload it once. Upload steps are in the README inside the zip.'}</span></div>
+    <p class="hint" style="margin-top:8px">Colours and the name font come from your Stationery settings. After adding guests, download again and replace index.html and config.php. Codes don’t change.</p>
+    <div class="sep"></div>
+    <div class="card-h" style="margin-bottom:10px"><h2>Household codes</h2>
+      <div class="row"><div class="seg" id="cf">${[['','All',H.length],['Waiting','Waiting',waiting],['done','Replied',H.length-waiting]].map(([v,l,n])=>`<button data-v="${v}" aria-pressed="${ui.cf===v}">${l}<span>${n}</span></button>`).join('')}</div>
+      <button class="btn sm" id="cpall">Copy messages</button><button class="btn sm" id="cxl">Export for mail merge</button></div></div>
+    <details class="tpl"><summary>Edit the message</summary><textarea id="rtpl" rows="5">${esc(r.msgTpl)}</textarea><p class="hint">Fields: {names} {first} {event} {date} {venue} {deadline} {link} {code}</p></details>
+    <div class="tcard" style="max-height:420px"><table class="data"><thead><tr><th>Household</th><th>Code</th><th>Status</th><th></th></tr></thead><tbody id="hbody"></tbody></table></div>
+  </div></section>
+
+  <section class="card step"><span class="num">3</span><div class="stepb">
+    <div class="card-h"><h2>Bring the replies back</h2>${r.lastImport?`<span>Last import ${new Date(r.lastImport.at).toLocaleString('en-GB',{dateStyle:'medium',timeStyle:'short'})} · ${r.lastImport.updated} updated</span>`:''}</div>
+    <p class="hint">Open this private address to download every guest’s latest reply as a file. Then import that file here. Replies are matched to guests automatically.</p>
+    <div class="linkbox"><code id="radm">${esc(rsvpBase()+'responses.php?key='+r.adminKey)}</code><button class="btn sm" id="cadm">Copy</button></div>
+    <p class="hint" style="color:var(--warn);margin-bottom:14px">Keep this address to your team. Anyone who has it can download the replies.</p>
+    <button class="btn pri" id="c3imp">${ic('upload',16)}Import replies file</button>
+    ${r.messages.length?`<div class="sep"></div><span class="eyebrow">Messages from guests</span><ul class="msgs">${r.messages.slice(0,20).map(x=>`<li><b>${esc(x.names)}</b><p>${esc(x.text)}</p></li>`).join('')}</ul>`:''}
+  </div></section></div>`;
+  const drawH=()=>{const rows=H.filter(h=>{const s=hhStatus(h.mem)[1];return!ui.cf||(ui.cf==='Waiting'?s==='Waiting':s!=='Waiting')});
+    $('#hbody',el).innerHTML=rows.map(h=>{const [c,l]=hhStatus(h.mem);return`<tr><td><b style="font-weight:600">${esc(partyNames(h.mem))}</b><div class="meta">${h.mem.length} ${h.mem.length>1?'guests':'guest'} · ${esc(h.mem[0].group||'No group')}</div></td><td class="mono">${esc(h.code)}</td><td><span class="pill ${c}">${l}</span></td><td style="text-align:right"><button class="btn sm" data-cp="${esc(h.key)}">Copy message</button></td></tr>`}).join('')||'<tr><td colspan="4" class="empty">No households here.</td></tr>'};
+  drawH();
+  const save=(k,v)=>{r[k]=v;persist();$('#rbl',el).textContent=rsvpBase();$('#radm',el).textContent=rsvpBase()+'responses.php?key='+r.adminKey};
+  $('#rb',el).onchange=e=>save('base',e.target.value.trim());$('#rs',el).onchange=e=>{const v=slug(e.target.value);e.target.value=v;save('slug',v)};
+  $('#rd',el).onchange=e=>save('deadline',e.target.value);$('#rl',el).onchange=e=>save('lang',e.target.value);
+  $('#rm',el).onchange=()=>save('meals',$$('#rm input:checked',el).map(i=>i.value));
+  $('#rtpl',el).oninput=e=>{r.msgTpl=e.target.value;persist()};
+  $('#cf',el).onclick=e=>{const b=e.target.closest('button');if(!b)return;ui.cf=b.dataset.v;$$('#cf button',el).forEach(x=>x.setAttribute('aria-pressed',x===b));drawH()};
+  $('#hbody',el).onclick=e=>{const b=e.target.closest('[data-cp]');if(!b)return;const h=H.find(x=>x.key===b.dataset.cp);copyText(msgFor(h),'Message copied. Paste it into WhatsApp or email.')};
+  $('#cpall',el).onclick=()=>{const rows=H.filter(h=>{const s=hhStatus(h.mem)[1];return!ui.cf||(ui.cf==='Waiting'?s==='Waiting':s!=='Waiting')});if(!rows.length){toast('No households to copy.');return}copyText(rows.map(msgFor).join('\n\n———\n\n'),`${rows.length} messages copied`)};
+  $('#cxl',el).onclick=()=>saveXLSX(`rsvp-codes-${slug(S.event.name)}.xlsx`,[{name:'RSVP codes',rows:[['Household','Guests','Group','Code','RSVP link','Status','Message','Address'],...H.map(h=>[partyNames(h.mem),h.mem.length,h.mem[0].group,h.code,rsvpLink(h.code),hhStatus(h.mem)[1],msgFor(h),(h.mem.find(g=>g.address)||{}).address||''])]}]);
+  $('#kit',el).onclick=e=>downloadKit(e.currentTarget);
+  $('#cadm',el).onclick=()=>copyText(rsvpBase()+'responses.php?key='+r.adminKey,'Private replies address copied');
+  $('#c1imp',el).onclick=()=>openImport();$('#c1tpl',el).onclick=clientTemplate;
+  $('#c3imp',el).onclick=()=>openImport({src:'file',title:'Import RSVP replies'});
 }
 
 /* ================= SEATING RULES ================= */
@@ -1192,7 +1449,7 @@ function motifHTML(o){
 function statItems(o){
   const who=g=>o.who==='all'?g.rsvp!=='No'||o.type==='invite'||o.type==='labels':o.who==='pending'?g.rsvp!=='No':g.rsvp==='Yes';
   const tn=Object.fromEntries(S.tables.map(t=>[t.id,t.name]));const dot=g=>o.dots&&g.meal?`<i class="md" style="background:${MEAL_COL[g.meal]||GREY}"></i>`:'';const mo=motifHTML(o);
-  const merge=(tpl,mem)=>{const g=mem[0];const tb=mem.find(x=>x.table);return tpl.replace(/\{(\w+)\}/g,(m,k)=>({names:partyNames(mem),first:g.first,last:g.last,table:tb?tn[tb.table]:'your table',event:S.event.name,date:fmtDate(S.event.date),venue:S.event.venue}[k]??m))};
+  const merge=(tpl,mem)=>{const g=mem[0];const tb=mem.find(x=>x.table);return tpl.replace(/\{(\w+)\}/g,(m,k)=>({names:partyNames(mem),first:g.first,last:g.last,table:tb?tn[tb.table]:'your table',event:S.event.name,date:fmtDate(S.event.date),venue:S.event.venue,code:ensureCodes()[pKey(g)]||'',rsvp_link:rsvpLink(ensureCodes()[pKey(g)]||'')}[k]??m))};
   const gs=S.guests.filter(who);
   switch(o.type){
     case 'place':return gs.map(g=>`<div class="c pc">${mo}<div class="nm">${esc(fullName(g))}</div><div class="cap">${g.table?esc(tn[g.table]):'&nbsp;'}${dot(g)}</div></div>`);
@@ -1224,7 +1481,7 @@ function viewStationery(el){
         ${o.motif==='mono'?`<label class="f">Monogram letters<input id="smn" value="${esc(o.monogram)}" placeholder="A&R"></label>`:''}
         ${o.motif==='image'?`<label class="f">Image (PNG, JPG or SVG)<input type="file" id="sim" accept="image/*" style="height:auto;padding:8px"></label>`:''}`}
         ${o.type==='place'||o.type==='escort'?`<label class="chk"><input type="checkbox" id="sdo" ${o.dots?'checked':''}> Meal colour dots for the caterer</label>`:''}</div>
-      ${tpl?`<div class="sect"><h3>Wording</h3><textarea id="stx" rows="10">${esc(o.type==='invite'?o.invite:o.thanks)}</textarea><p class="hint">Merge fields: {names} {first} {last} {table} {event} {date} {venue}. A line with only {names} is set in the name font.</p></div>`:''}
+      ${tpl?`<div class="sect"><h3>Wording</h3><textarea id="stx" rows="10">${esc(o.type==='invite'?o.invite:o.thanks)}</textarea><p class="hint">Merge fields: {names} {first} {last} {table} {event} {date} {venue} {code} {rsvp_link}. A line with only {names} is set in the name font.</p></div>`:''}
       <div class="sect"><p class="hint">Cut guides are dashed. Labels fit Avery L7160 sheets (21 per A4). Print at 100% with margins set to “None”.</p></div>
     </aside>
     <div class="paperbox"><div id="stp"></div></div>
@@ -1278,7 +1535,7 @@ function viewReports(el){
 }
 
 /* ================= boot ================= */
-const VIEWS={dashboard:viewDashboard,guests:viewGuests,prefs:viewPrefs,floor:viewFloor,charts:viewCharts,stationery:viewStationery,reports:viewReports};
+const VIEWS={dashboard:viewDashboard,guests:viewGuests,collect:viewCollect,prefs:viewPrefs,floor:viewFloor,charts:viewCharts,stationery:viewStationery,reports:viewReports};
 document.head.insertAdjacentHTML('beforeend',`<style>${CHART_CSS}${STAT_CSS}</style>`);
 $('#tabs').onclick=e=>{const b=e.target.closest('[data-v]');if(b)go(b.dataset.v)};
 $('#evcard').onclick=openSettings;
